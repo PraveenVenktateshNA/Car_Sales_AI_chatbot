@@ -8,8 +8,9 @@ import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
 
-car_df= pd.read_csv("dataset1.csv")
+car_df = pd.read_csv(os.path.join(os.path.dirname(__file__), "dataset1.csv"))
 
+print(car_df.head())
 
 #setting up the open_ai api
 client = AsyncOpenAI(
@@ -18,20 +19,33 @@ client = AsyncOpenAI(
 )
 
 #filling fixed prompt (wont be consider if user gave none)
-def df_filt(car_df,prefs):
+def df_filt(car_df, prefs):
+    size_map = {
+    "Sedan": "Mid",
+    "SUV": "High",
+    "Hatchback": "Low"
+    }
+    if prefs.get("Size") in size_map:
+        prefs["Size"] = size_map[prefs["Size"]]
     filt_df = car_df.copy()
-    for field in ["Fuel" , "Color" , "Transmission" , "Size"]:
+    for field in ["Fuel", "Color", "Transmission", "Size"]:
         if prefs.get(field):
-            filt_df = filt_df[filt_df[field] == prefs[field]]
+            temp_df = filt_df[filt_df[field] == prefs[field]]
+            if not temp_df.empty:
+                filt_df = temp_df
+            else:
+                print(f"[df_filt] Skipping filter for {field} - no match")
+    print("[df_filt] Before:", len(car_df), "→ After:", len(filt_df))
     return filt_df
+
 
 #rank based filtering for the remaining fields
 def ranked_filter(car_df,prefs):
     filtered_df = car_df.copy()
     
-    #price filter
-    if(prefs.get("Price (INR)")):
-        filtered_df = filtered_df[filtered_df["Price (INR)"] == prefs["Price (INR)"]]
+    # #price filter
+    # if(prefs.get("Price (INR)")):
+    #     filtered_df = filtered_df[filtered_df["Price (INR)"] == prefs["Price (INR)"]]
     
     #luxury filter
     user_lux = prefs.get("Luxury" , "High")
@@ -102,6 +116,7 @@ def ranked_filter(car_df,prefs):
             if not price_df.empty:
                 break
     filtered_df = price_df
+    print("[ranked_filter] Final count:", len(filtered_df)) #here for checking shud be removed after
     return filtered_df
 
 
@@ -157,6 +172,12 @@ async def handle_user_message(message: cl.Message):
     filtered = df_filt(car_df , prefs)
 
     ranked = ranked_filter(filtered , prefs)
+    print("\n[prefs]", prefs)
+    print("[DF] Unique Fuel:", car_df["Fuel"].unique())
+    print("[DF] Unique Color:", car_df["Color"].unique())
+    print("[DF] Unique Transmission:", car_df["Transmission"].unique())
+    print("[DF] Unique Size:", car_df["Size"].unique())
+
     if ranked.empty:
         await cl.Message(content="Sorry, no cars match your preferences.").send()
 
